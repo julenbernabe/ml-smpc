@@ -1,0 +1,41 @@
+# Copyright Tecnalia Research && Innovation
+# All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+version: '2.4'
+
+#################################### SCALE-MAMBA ####################################
+
+services:
+
+    smpc-client:
+        image: 'ml-smpc:test'
+        working_dir: /SMPC
+        container_name: smpc-client
+        hostname: smpc-client
+        restart: unless-stopped
+        tty: true
+        volumes:
+          - './iris-dataset/mp-spdz/input0:/SMPC/MP-SPDZ/Player-Data/Input-P0-0'
+          - './iris-dataset/mp-spdz/input1:/SMPC/MP-SPDZ/Player-Data/Input-P1-0'
+          - './iris-dataset/mp-spdz/input2:/SMPC/MP-SPDZ/Player-Data/Input-P2-0'
+          - './iris-dataset/scale-mamba/input0:/SMPC/MP-SPDZ/Player-Data/Player0_in.txt'
+          - './iris-dataset/scale-mamba/input1:/SMPC/MP-SPDZ/Player-Data/Player1_in.txt'
+          - './iris-dataset/scale-mamba/input2:/SMPC/MP-SPDZ/Player-Data/Player2_in.txt'
+        networks:
+            default:
+              ipv4_address: 192.168.150.1
+        
+    
+
+
+#################################### CONFIGURATION ####################################
+
+networks:
+    default:
+        driver: bridge
+        ipam:
+            driver: default
+            config:
+                - subnet: 192.168.150.1/24

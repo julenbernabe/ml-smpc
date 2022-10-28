@@ -1,0 +1,156 @@
+# LINEAR REGRESSION ALGORITHM FOR IRIS DATASET
+
+# -- Import mpc_math to compute square roots later --
+from Compiler import mpc_math
+
+# ---------------------------- Establish input precision to 8 digits ---------------------------- 
+# Note: bit-length of 32 bits implies numbers under 2**32 are computed exactly (<10**9),
+# but the ninth digit can have errors. This with this bit-length precision we assure
+# 8 digits will be precise.
+sfix.set_precision(22, 44)
+cfix.set_precision(22, 44)
+print_float_precision(6)
+
+# First define the number of players executing the MPC
+n_players = 5
+
+# ---------------------------- Import Data from Iris Dataset ----------------------------
+# In the Iris Dataset there are 150 data items. Each player will have 150 // (n_players)
+total_data = 20000
+train_n = total_data // n_players
+real_data = train_n * n_players
+
+# We introduce SepalLengthCm, SepalWidthCm, PetalLengthCm y PetalWidthCm variables in a matrix (each variable will be a column).
+# The Species variable goes in an independent array
+# Hence, we have 5 variables
+n_variables = 5
+
+
+# Normal variables will be allocated in this matrix
+X = sfix.Matrix(real_data, n_variables - 1)
+# The Species variable will be allocated in an independent array
+y = sfix.Array(real_data)
+
+# We add the values from players to the above matrix and array
+@for_range(train_n)
+def setValues(i):
+    @for_range(n_variables)
+    def setValues(j):
+        @for_range(n_players)
+        def setValues(k):
+            @if_e(j == n_variables -1)
+            def setY():
+                y[k * train_n + i] = sfix.get_input_from(k)
+            @else_
+            def setX():
+                X[k * train_n + i][j] = sfix.get_input_from(k)
+
+# ---------------------------- FUNCTIONS ----------------------------
+
+# ---------------------------- Mean ----------------------------
+# Returns an array containing in each element the mean of a variable from the above matrix
+
+def mean(matrix):
+    n_rows = len(matrix)
+    n_variables = len(matrix[0])
+    sum = sfix.Array(n_variables)
+    mean = sfix.Array(n_variables)
+    n = cfix(n_rows)
+    @for_range(n_variables)
+    def range_body(j):
+        @for_range(n_rows)
+        def computeMean(i):
+            sum[j] = sum[j] + matrix[i][j]
+        mean[j] = sum[j]/n
+    return mean
+
+# ---------------------------- Standard deviation ----------------------------
+# Returns an array containing in each element the standard deviation of a variable from the above matrix
+
+def standard_deviation(matrix, means):
+    n_rows = len(matrix)
+    n_variables = len(matrix[0])
+    sum = sfix.Array(n_variables)
+    sd = sfix.Array(n_variables)
+    n = cfix(n_rows - 1)
+    @for_range(n_variables)
+    def range_body(j):
+        @for_range(n_rows)
+        def computeSD(i):
+            sum[j] = sum[j] + ((matrix[i][j] - means[j])**2)
+        sd[j] = mpc_math.sqrt(sum[j]/n)
+    return sd
+
+# ---------------------------- Covariance ----------------------------
+# Returns the covariance between two variables
+
+def covariance(X, Y, n_rows, meanX, meanY):
+    sum = sfix.Array(1)
+    sum[0] = 0
+    n = cfix(n_rows)
+    @for_range(n_rows)
+    def range_body(i):
+        sum[0] = sum[0] + (X[i] - meanX)*(Y[i] - meanY)
+    cov = sum[0]/n
+    return cov
+
+# ---------------------------- Pearson correlation ----------------------------
+# Returns the Pearson correlation index between two variables
+
+def pearson_correlation(cov, sdX, sdY):
+    r = cov / (sdX * sdY)
+    return r
+
+# ---------------------------- Covariance & Pearson Matrices ----------------------------
+# Returns the covariance matrix for the variables
+
+def matrices(matrix, means, sds):
+    n_rows = len(matrix)
+    n_variables = len(matrix[0])
+    new = matrix.transpose()
+    covM = sfix.Matrix(n_variables, n_variables)
+    pearsonM = sfix.Matrix(n_variables, n_variables)
+    @for_range(n_variables)
+    def range_body(i):
+        @for_range(n_variables)
+        def computeCov(j):
+            covM[i][j] = covariance(new[i], new[j], n_rows, means[i], means[j])
+            pearsonM[i][j] = pearson_correlation(covM[i][j], sds[i], sds[j])
+    return covM, pearsonM
+
+# ---------------------------- Linear Regression ----------------------------
+# Returns the results of the linear regression calculated:
+#   - beta0: the independent variable
+#   - beta1: the coefficient of X
+
+# In summary: Y = beta0 + beta1 * X 
+
+def linear_reg(cov, sdX, meanX, meanY):
+    #If the relationship is lineal (i.e. Pearson correlation != 0)
+    beta1=cov/(sdX**2)
+    beta0=meanY-beta1*meanX
+    return beta0,beta1
+
+# ---------------------------- EXECUTION FOR IRIS DATASET ----------------------------
+
+means = mean(X)
+sds = standard_deviation(X, means)
+covMatrix, pearsonMatrix = matrices(X, means, sds)
+
+print_ln('\n \n \n -------------- SOLUTION -------------\n \n ')
+print_ln('Covariance Matrix: %s', covMatrix.reveal_nested())
+print_ln('Pearson correlation matrix: %s', pearsonMatrix.reveal_nested())
+
+print_ln('\n\nWe can see that variables 3 (PetalLengthCm) and 4 (PetalWidthCm) are the most correlated ones.')
+print_ln('\nTheir Pearson Correlation coefficient is: %s\n', pearsonMatrix[2][3].reveal())
+print_ln('We compute now the linear regression for those variables.')
+beta0, beta1 = linear_reg(covMatrix[2][3], sds[2], means[2], means[3])
+b0 = beta0.reveal()
+b1 = beta1.reveal()
+print_ln('Beta0 is: %s',b0)
+print_ln('Beta1 is: %s',b1)
+print_ln('\nResult:\n')
+print_ln('\t Y = %s + (%s)X\n', b0, b1)
+print_ln('where:')
+print_ln(' --> X = PetalLengthCm ')
+print_ln(' --> Y = PetalWidthCm \n\n')

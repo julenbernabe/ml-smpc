@@ -1,0 +1,59 @@
+# MEAN ALGORITHM FOR IRIS DATASET
+
+# First define the number of players executing the MPC
+n_players = 10
+
+# ---------------------------- Import Data from Iris Dataset ----------------------------
+# In the Iris Dataset there are 150 data items. Each player will have 150 // (n_players)
+total_data = 150
+train_n = total_data // n_players
+
+# We introduce SepalLengthCm, SepalWidthCm, PetalLengthCm y PetalWidthCm variables in a matrix (each variable will be a column).
+# The Species variable goes in an independent array
+# Hence, we have 5 variables
+n_variables = 5
+
+
+# Normal variables will be allocated in this matrix
+X = sfix.Matrix(total_data, n_variables)
+# The Species variable will be allocated in an independent array
+y = sfix.Array(total_data)
+
+# We add the values from players to the above matrix and array
+for i in range(train_n):
+    for j in range(n_variables):
+        for k in range (n_players):
+            if j == n_variables -1:
+                y[k * train_n + i] = sfix.load_sint(sint.get_private_input_from(k))
+            else:
+                X[k * train_n + i][j] = sfix.load_sint(sint.get_private_input_from(k))
+
+# ---------------------------- FUNCTIONS ----------------------------
+
+# ---------------------------- Mean ----------------------------
+# Returns an array containing in each row the mean of a variable from the above matrix
+
+def mean(matrix, n_rows, n_variables):
+    sum = sfix.Array(n_variables)
+    mean = sfix.Array(n_variables)
+    n = cfix(n_rows)
+    @for_range(n_variables)
+    def range_body(j):
+        @for_range(n_rows)
+        def computeMean(i):
+            sum[j] = sum[j] + matrix[i][j]
+        mean[j] = sum[j]/n
+    return mean
+
+# ---------------------------- EXECUTION FOR IRIS DATASET ----------------------------
+
+print_ln('\n \n \n ---------------------------- SOLUTION ---------------------------- \n \n ')
+print_ln('After pooling the data of the three participants we obtain the following statistics: \n')
+
+print_ln('The mean values are: ')
+mean = mean(X, total_data, n_variables -1)
+@for_range(n_variables - 1)
+def print_arr(k):
+    print_str('%s ', mean[k].reveal())
+print_ln('\n\n\n')
+

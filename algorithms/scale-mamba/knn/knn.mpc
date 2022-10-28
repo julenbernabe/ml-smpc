@@ -1,0 +1,263 @@
+# K-NEAREST-NEIGHBOURS ALGORITHM FOR IRIS DATASET
+
+# First define the number of players executing the MPC
+n_players = 4
+
+# ---------------------------- Import Data from Iris Dataset ----------------------------
+# In the Iris Dataset there are 150 data items. Each player will have 150 // (n_players)
+total_data = 150
+# For KNN we need some data to train the model, and some data to test the training
+train_data = 120
+test_data = 30
+total_n = total_data // n_players
+train_n = train_data // n_players
+test_n = test_data //n_players
+
+# We introduce SepalLengthCm, SepalWidthCm, PetalLengthCm y PetalWidthCm variables in a matrix (each variable will be a column).
+# The Species variable goes in an independent array
+# Hence, we have 5 variables
+n_variables = 5
+
+
+# Initialize matrix for training data
+X_train = sfix.Matrix(train_data, n_variables - 1)
+# The Species variable will be allocated in an independent array
+y_train = sfix.Array(train_data)
+
+# We add the values from players to the above matrix and array
+for i in range(train_n):
+    for j in range(n_variables):
+        for k in range (n_players):
+            if j == n_variables -1:
+                y_train[k * train_n + i] = sfix.load_sint(sint.get_private_input_from(k))
+            else:
+                X_train[k * train_n + i][j] = sfix.load_sint(sint.get_private_input_from(k))
+
+
+# Initialize matrix for testing data
+X_test = sfix.Matrix(test_data, n_variables - 1)
+# The Species variable will be allocated in an independent array
+y_test = sfix.Array(test_data)
+
+# We add the values from players to the above matrix and array
+for i in range(test_n):
+    for j in range(n_variables):
+        for k in range (n_players):
+            if j == n_variables -1:
+                y_test[k * test_n + i] = sfix.load_sint(sint.get_private_input_from(k))
+            else:
+                X_test[k * test_n + i][j] = sfix.load_sint(sint.get_private_input_from(k))
+
+
+# ---------------------------- FUNCTIONS ----------------------------
+
+# ---------------------------- Euclidean Distance ----------------------------
+# Function to compute the euclidean distance between two arrays. Returns a value, not an array 
+# (see n-dimensional Euclidean Distance in Wikipedia)
+
+def euclidean_distance(x1,x2):
+    sum = sfix.Array(1)
+    sum[0] = sfix(0)
+    @for_range(len(x1))
+    def range_body(i):
+        sum[0] = sum[0] + ((x1[i]-x2[i])*(x1[i]-x2[i]))
+    distance = mpc_math.sqrt(sum[0])
+    return distance 
+
+# ---------------------------- Sort Indices ----------------------------
+# Funcion that sorts the elements in an array, and returns:
+#       indices: an array of the indices of the sorted array
+# Example: let the input array be [3, 5, 1] (the starting index array is trivially [0, 1, 2]), then 
+# the sorted array would be [1, 3, 5]
+# and the result of this function should be [2, 0, 1]
+
+def sort_indices(array):
+    n = len(array)
+    indices = sint.Array(n)
+    sorted = sfix.Array(n)
+
+    # We start with first element of the array
+    minimum = sfix.Array(1)
+    minimum[0] = array[0]
+    
+    min_index = sint.Array(1)
+    min_index[0] = sint(0)
+
+    maximum = sfix.Array(1)
+    maximum[0] = sfix(0)
+
+    # If we find a smaller element, we update minimum
+    @for_range(n)
+    def range_body(j):
+        @if_((array[j] < minimum[0]).reveal() == 1)
+        def block():
+            minimum[0] = array[j]
+            min_index[0] = sint(j)
+
+        @if_((array[j] > maximum[0]).reveal() == 1)
+        def block():
+            maximum[0] = array[j]
+
+    sorted[0] = minimum[0]
+    indices[0] = min_index[0]
+
+    @for_range(1,n)
+    def range_body(i):
+        limit = sorted[i-1]
+
+        minimum[0] = maximum[0] + sfix(1)
+        # We set the last one
+        min_index[0] = indices[i-1]
+  
+        @for_range(n)
+        def range_body(j):
+            @if_((array[j] > limit).reveal() == 1)
+            def block():
+                # We only check those that are not in the list yet
+                # limit tells us the last set element
+                @if_((array[j] < minimum[0]).reveal() == 1)
+                def block():
+                    minimum[0] = array[j]
+                    min_index[0] = sint(j)
+            
+            @if_((array[j] == limit).reveal() == 1)
+            def block():
+                @if_((sfix(j) > indices[i-1]).reveal() == 1)
+                def block():
+                    @if_((array[j] < minimum[0]).reveal() == 1)
+                    def block():
+                        minimum[0] = array[j]
+                        min_index[0] = sint(j)
+   
+        sorted[i] = minimum[0]
+        indices[i] = min_index[0]
+        
+    return indices      
+
+
+# ---------------------------- Most Common ----------------------------
+#  Function to compute the most common element in an array
+#       most_common: most common value in the array (sfix)
+
+def most_common(array):
+    max_rep_number = sint.Array(1)
+    max_rep_number[0] = sint(0)
+    most_common = sfix.Array(1)
+    most_common[0] = sfix(0)
+    @for_range(len(array))
+    def range_body(i):
+        element = array[i]
+        rep_number = sint.Array(1)
+        rep_number[0] = sint(0)
+        @for_range(len(array))
+        def range_body(j):
+            elem = array[j]
+            @if_((elem == element).reveal() == 1)
+            def block():
+                rep_number[0] = rep_number[0] + sint(1)
+        x = rep_number[0]
+        y = max_rep_number[0]
+        @if_((x > y).reveal() == 1)
+        def block():
+            max_rep_number[0] = rep_number[0]
+            most_common[0] = element
+    return most_common[0]
+
+# ---------------------------- Accuracy ----------------------------
+# Given two arrays: y_true y y_pred
+# this function computes the accuracy of the model (how much does the model guess)
+
+def accuracy(y_true,y_pred):
+    n = len(y_true)
+    sum = sfix.Array(1)
+    sum[0] = sfix(0)
+    @for_range(n)
+    def range_body(i):
+        @if_((y_true[i] == y_pred[i]).reveal() == 1)
+        def block():
+            sum[0] = sum[0] + sfix(1)
+    return sum[0]/sfix(n)
+
+# ---------------------------- KNN ----------------------------
+
+class KNN:
+    # K is the amount of neighbours we want to consider 
+    # By default k=3
+    def __init__(self, k=3):
+        # We simply store K
+        self.k = k
+
+    def fit(self, X, y):
+        # We simply store the training data
+        # X_train: nxm matrix (n = amount of data, m = variable number)
+        # y_train: array with n entries storing the classification of the elements in X (preserves order of elements in X)
+        self.X_train = X
+        self.y_train = y
+
+    def predict(self, X):
+        # We start the prediction calling this function
+        n = len(X)
+        y_pred = sfix.Array(n)
+        @for_range(n)
+        def range_body(i):
+            x = X[i]
+            print_ln('predict row %s', i)
+            # We call predict so as to compute the prediction of each row in X
+            y_pred[i] = self._predict(x)
+            print_ln('predict row %s ended', i)
+        return y_pred
+
+    def _predict(self, x):
+        # x is an array containing the row in X we want to predict
+
+        # Compute the euclidean distance between x and all the other rows in X
+        n = len(self.X_train)
+        distances = sfix.Array(n)
+        @for_range(n)
+        def range_body(i):
+            x_train = self.X_train[i]
+            distances[i] = euclidean_distance(x,x_train)
+        
+        # We sort the distances, and return their indices list using sort_indices function
+        indices = sort_indices(distances)
+
+        # Take first K indexes (i.e. the K most nearest rows)
+        k_idx = sint.Array(self.k)
+        @for_range(self.k)
+        def range_body(i):
+            k_idx[i] = indices[i]
+
+        # We store the Species variable value (in y_train) for the above nearest values
+        k_neighbor_labels = sfix.Array(self.k)
+        @for_range(self.k)
+        def range_body(i):
+            ind = regint(k_idx[i].reveal())
+            k_neighbor_labels[i] = self.y_train[ind]
+
+        # We find the most common value among the K nearest values and return that value as the prediction of row x
+
+        return most_common(k_neighbor_labels)
+
+
+# ---------------------------- EXECUTION FOR IRIS DATASET ----------------------------
+
+# Set K
+k = 3
+
+# Init class KNN
+neighbours = KNN(k)
+
+# Add to KNN the training data
+neighbours.fit(X_train, y_train)
+
+# Predict the testing data
+predictions = neighbours.predict(X_test)
+
+print_ln('The predictions for the Species variable are: ')
+@for_range(len(predictions))
+def range_body(i):
+    print_ln('Element %s: \n\t Prediction %s \n\t Value %s', i, predictions[i].reveal(), y_test[i].reveal())
+    
+# Lastly, we compute the model accuracy
+right_guess = accuracy(y_test,predictions)
+print_ln('The accuracy is: %s',right_guess.reveal())

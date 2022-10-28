@@ -1,0 +1,93 @@
+# STANDARD DEVIATION ALGORITHM FOR IRIS DATASET
+
+# -- Import mpc_math to compute square roots later --
+from Compiler import mpc_math
+
+# ---------------------------- Establish input precision to 8 digits ---------------------------- 
+# Note: bit-length of 32 bits implies numbers under 2**32 are computed exactly (<10**9),
+# but the ninth digit can have errors. This with this bit-length precision we assure
+# 8 digits will be precise.
+sfix.set_precision(22, 44)
+cfix.set_precision(22, 44)
+print_float_precision(6)
+
+# First define the number of players executing the MPC
+n_players = 5
+
+# ---------------------------- Import Data from Iris Dataset ----------------------------
+# In the Iris Dataset there are 150 data items. Each player will have 150 // (n_players)
+total_data = 10000
+train_n = total_data // n_players
+real_data = train_n * n_players
+
+# We introduce SepalLengthCm, SepalWidthCm, PetalLengthCm y PetalWidthCm variables in a matrix (each variable will be a column).
+# The Species variable goes in an independent array
+# Hence, we have 5 variables
+n_variables = 5
+
+
+# Normal variables will be allocated in this matrix
+X = sfix.Matrix(real_data, n_variables - 1)
+# The Species variable will be allocated in an independent array
+y = sfix.Array(real_data)
+
+# We add the values from players to the above matrix and array
+@for_range(train_n)
+def setValues(i):
+    @for_range(n_variables)
+    def setValues(j):
+        @for_range(n_players)
+        def setValues(k):
+            @if_e(j == n_variables -1)
+            def setY():
+                y[k * train_n + i] = sfix.get_input_from(k)
+            @else_
+            def setX():
+                X[k * train_n + i][j] = sfix.get_input_from(k)
+
+# ---------------------------- FUNCTIONS ----------------------------
+
+# ---------------------------- Mean ----------------------------
+# Returns an array containing in each element the mean of a variable from the above matrix
+
+def mean(matrix):
+    n_rows = len(matrix)
+    n_variables = len(matrix[0])
+    sum = sfix.Array(n_variables)
+    mean = sfix.Array(n_variables)
+    n = cfix(n_rows)
+    @for_range(n_variables)
+    def range_body(j):
+        @for_range(n_rows)
+        def computeMean(i):
+            sum[j] = sum[j] + matrix[i][j]
+        mean[j] = sum[j]/n
+    return mean
+
+# ---------------------------- Standard deviation ----------------------------
+# Returns an array containing in each element the standard deviation of a variable from the above matrix
+
+def standard_deviation(matrix, mean):
+    n_rows = len(matrix)
+    n_variables = len(matrix[0])
+    sum=sfix.Array(n_variables)
+    sd = sfix.Array(n_variables)
+    n = cfix(n_rows - 1)
+    @for_range(n_variables)
+    def range_body(j):
+        @for_range(n_rows)
+        def computeSD(i):
+            sum[j] = sum[j] + ((matrix[i][j] - mean[j])**2)
+        sd[j] = mpc_math.sqrt(sum[j]/n)
+    return sd
+
+# ---------------------------- EXECUTION FOR IRIS DATASET ----------------------------
+
+print_ln('\n \n \n ---------------------------- SOLUTION ---------------------------- \n \n ')
+print_ln('After pooling the data of the three participants we obtain the following statistics: \n')
+
+mean = mean(X)
+print_ln('The mean values are:\n %s\n\n\n', mean.reveal())
+
+sd = standard_deviation(X, mean)
+print_ln('The standard deviation values are: %s \n \n\n',  sd.reveal())
